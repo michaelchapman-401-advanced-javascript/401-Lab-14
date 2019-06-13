@@ -3,57 +3,57 @@
 const User = require('./users-model.js');
 
 module.exports = (capability) => {
-
+  
   return (req, res, next) => {
-  
-    try{
-      // get Basic Authorization header info
+
+    try {
       let [authType, authString] = req.headers.authorization.split(/\s+/);
-  
-      switch(authType.toLowerCase()){
-      case 'basic':
-        // do basic auth
-        return _authBasic(authString);
-      case 'bearer':
-        return _authBearer(authString);
-      default:
-        // do error
-        _authError();
+
+      switch (authType.toLowerCase()) {
+        case 'basic':
+          return _authBasic(authString);
+        case 'bearer':
+          return _authBearer(authString);
+        default:
+          return _authError();
       }
-    }catch(e){
+    } catch (e) {
       _authError();
     }
-  
-    function _authBasic(authString){
-      let base64Buffer = Buffer.from(authString, 'base64');
-      let bufferString = base64Buffer.toString();
-      let [username, password] = bufferString.split(':');
-      let auth = {username, password};
-  
+
+    function _authBasic(str) {
+    // str: am9objpqb2hubnk=
+      let base64Buffer = Buffer.from(str, 'base64'); // <Buffer 01 02 ...>
+      let bufferString = base64Buffer.toString();    // john:mysecret
+      let [username, password] = bufferString.split(':'); // john='john'; mysecret='mysecret']
+      let auth = {username, password}; // { username:'john', password:'mysecret' }
+
       return User.authenticateBasic(auth)
         .then(user => _authenticate(user))
-        .catch(next);
+        .catch(_authError);
     }
-  
-    function _authBearer(authString){
-      return User.authenticateBearer(authString)
+
+    function _authBearer(authString) {
+      return User.authenticateToken(authString)
         .then(user => _authenticate(user))
-        .catch(next);
+        .catch(_authError);
     }
-  
-    function _authenticate(user){
-      if(user && user.can(capability)){
+
+    function _authenticate(user) {
+      if ( user && (!capability || (user.can(capability))) ) {
         req.user = user;
         req.token = user.generateToken();
         next();
-      }else{
+      }
+      else {
         _authError();
       }
     }
-  
-    function _authError(){
-      next({status: 401, statusMessage: 'Unauthorized', message: 'Invalid User ID/password'});
-    }
-  };
-};
 
+    function _authError() {
+      next('Invalid User ID/Password');
+    }
+
+  };
+  
+};

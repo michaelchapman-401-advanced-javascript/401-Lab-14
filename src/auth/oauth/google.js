@@ -1,9 +1,10 @@
 'use strict';
 
 const superagent = require('superagent');
-const Users = require('../users-model');
+const Users = require('../users-model.js');
 
 const authorize = (req) => {
+
   let code = req.query.code;
   console.log('(1) CODE:', code);
 
@@ -16,31 +17,32 @@ const authorize = (req) => {
       redirect_uri: `${process.env.API_URL}/oauth`,
       grant_type: 'authorization_code',
     })
-    .then(response => response.body.access_token)
-    // .then(response => {
-    //   let access_token = response.body.access_token;
-    //   console.log('(2) ACCESS TOKEN:', access_token);
-    //   return access_token;
-    // })
+    .then( response => {
+      let access_token = response.body.access_token;
+      console.log('(2) ACCESS TOKEN:', access_token);
+      return access_token;
+    })
     .then(token => {
       return superagent.get('https://www.googleapis.com/plus/v1/people/me/openIdConnect')
         .set('Authorization', `Bearer ${token}`)
-        .then(response => {
+        .then( response => {
           let user = response.body;
           user.access_token = token;
-          console.log('(3) GOOGLE USER', user);
+          console.log('(3) GOOGLEUSER', user);
           return user;
         });
     })
-    .then(googleUser => {
+    .then(oauthUser => {
       console.log('(4) CREATE ACCOUNT');
-      return Users.createFromOAuth(googleUser);
+      return Users.createFromOAuth(oauthUser);
     })
     .then(actualRealUser => {
-      console.log('(5) Almost done...', actualRealUser);
+      console.log('(5) ALMOST ...', actualRealUser);
       return actualRealUser.generateToken();
     })
     .catch(error => error);
+
+
 };
 
 module.exports = {authorize};

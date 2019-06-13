@@ -3,101 +3,117 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+require('./roles-model.js');
+
+const SINGLE_USE_TOKENS = !!process.env.SINGLE_USE_TOKENS;
+const TOKEN_EXPIRE = process.env.TOKEN_LIFETIME || '5m';
+const SECRET = process.env.SECRET || 'foobar';
 
 const usedTokens = new Set();
 
 const users = new mongoose.Schema({
-  username: {type:String, required:true, unique: true},
+  username: {type:String, required:true, unique:true},
   password: {type:String, required:true},
-  email: {type:String},
-  role: {type:String, required:true, default:'user', enum:['admin', 'editor', 'user']},
+  email: {type: String},
+  role: {type: String, default:'user', enum: ['admin','editor','user']},
 });
 
-const capabilities = {
-  admin: ['create', 'read', 'update', 'delete'],
-  editor: ['create', 'read', 'update'],
-  user: ['read'],
-};
+users.virtual('roles', {
+  ref: 'roles',
+  localField: 'role',
+  foreignField: 'type',
+  justOne: true,
+});
 
-users.methods.can = function(capability){
-  return capabilities[this.role].includes(capability);
-};
+users.pre('find', function() {
+  try {
+    this.populate('roles');
+  }
+  catch(e) {
+    console.error('error', e);
+  }
+})
 
-users.pre('save', function(){
-  bcrypt.hash(this.password, 5)
+users.methods.can = function(capability) {
+  // Given this role, does it include this capability?
+  return capabilities[this.role].include(capability);
+}
+
+users.pre('save', function(next) {
+  bcrypt.hash(this.password, 10)
     .then(hashedPassword => {
       this.password = hashedPassword;
+      next();
     })
-    .catch(error => error);
+    .catch(error => {throw new Error(error);});
 });
 
-users.statics.authenticateBasic = function(auth){
-  let query = {username: auth.username};
-  return this.findOne(query)
+users.statics.createFromOauth = function(email) {
+
+  if(! email) { return Promise.reject('Validation Error'); }
+
+  return this.findOne( {email} )
     .then(user => {
-      if(user && user.comparePassword(auth.password)){
-        return user;
-      }
+      if( !user ) { throw new Error('User Not Found'); }
+      return user;
     })
-    .catch(console.error);
+    .catch( error => {
+      let username = email;
+      let password = 'none';
+      return this.create({username, password, email});
+    });
+
 };
 
-users.statics.authenticateBearer = function(token){
-
-  if(usedTokens.has(token)){
-    return Promise.reject('Invalid token');
+users.statics.authenticateToken = function(token) {
+  
+  if ( usedTokens.has(token ) ) {
+    return Promise.reject('Invalid Token');
   }
-
-  let parsedToken = jwt.verify(token, process.env.SECRET);
-
-  parsedToken.type !== 'key' && usedTokens.add(token);
-
-  let query = {_id: parsedToken.id};
-  return this.findOne(query);
+  
+  try {
+    let parsedToken = jwt.verify(token, SECRET);
+    (SINGLE_USE_TOKENS) && parsedToken.type !== 'key' && usedTokens.add(token);
+    let query = {_id: parsedToken.id};
+    return this.findOne(query);
+  } catch(e) { throw new Error('Invalid Token'); }
+  
 };
 
-users.methods.comparePassword = function(password){
-  return bcrypt.compare(password, this.password)
-    .then(valid => valid ? this : null);
+users.statics.authenticateBasic = function(auth) {
+  let query = {username:auth.username};
+  return this.findOne(query)
+    .then( user => user && user.comparePassword(auth.password) )
+    .catch(error => {throw error;});
 };
 
-users.methods.generateToken = function(type){
-  let tokenData = {
+users.methods.comparePassword = function(password) {
+  return bcrypt.compare( password, this.password )
+    .then( valid => valid ? this : null);
+};
+
+users.methods.generateToken = function(type) {
+  
+  let token = {
     id: this._id,
-    capabilities: this.role,
+    capabilities: capabilities[this.role],
     type: type || 'user',
   };
-
+  
   let options = {};
-  if(tokenData.type === 'user'){
-    options = {expiresIn: '5m'};
+  if ( type !== 'key' && !! TOKEN_EXPIRE ) { 
+    options = { expiresIn: TOKEN_EXPIRE };
   }
+  
+  return jwt.sign(token, SECRET, options);
+};
 
-  return jwt.sign(tokenData, process.env.SECRET, options);
+users.methods.can = function(capability) {
+  return capabilities[this.role].includes(capability);
 };
 
 users.methods.generateKey = function() {
   return this.generateToken('key');
-};
-
-users.statics.createFromOAuth = function(googleUser){
-  if(!googleUser) { return Promise.reject('Validation Error'); }
-
-  let email = googleUser.email;
-
-  return this.findOne({email})
-    .then(user => {
-      if(!user) { throw new Error('User Not Found'); }
-      console.log('Welcome back!');
-      return user;
-    })
-    .catch(error => {
-      console.log('creating new user');
-      let username = email;
-      let password = 'none';
-      let role = 'user';
-      return this.create({username, password, email, role});
-    });
 };
 
 module.exports = mongoose.model('users', users);
