@@ -15,6 +15,41 @@ newRouter.get('/public-stuff', auth(), (req, res, next) => {
   res.status(200).send('Public-Stuff');0
 });
 
+newRouter.get('/hidden-stuff', auth(), (req, res, next) => {
+  console.log('HIDDEN STUFF');
+  res.status(200).send('/hidden-stuff');0
+});
+
+newRouter.get('/something-to-read', auth('read'), (req, res, next) => {
+  console.log('something-to-read');
+  res.status(200).send('something-to-read');0
+});
+
+newRouter.post('/create-a-thing', auth('create'), (req, res, next) => {
+  console.log('create-a-thing');
+  res.status(200).send('create-a-thing');0
+});
+
+newRouter.put('/update', auth('update'), (req, res, next) => {
+  console.log('update');
+  res.status(200).send('update');0
+});
+
+newRouter.patch('/jp', auth('update'), (req, res, next) => {
+  console.log('jp');
+  res.status(200).send('jp');0
+});
+
+newRouter.delete('/bye-bye', auth('delete'), (req, res, next) => {
+  console.log('bye-bye');
+  res.status(200).send('bye-bye');0
+});
+
+newRouter.get('/everything', auth('superuser'), (req, res, next) => {
+  console.log('everything');
+  res.status(200).send('everything');0
+});
+
 authRouter.post('/signup', (req, res, next) => {
   let user = new User(req.body);
   user.save()
